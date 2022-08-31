@@ -10,6 +10,8 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\WithFaker;
 use Tests\TestCase;
+use Laravel\Sanctum\Sanctum;
+use Illuminate\Http\Response;
 
 class OfficesControllerTest extends TestCase
 {
@@ -107,7 +109,7 @@ class OfficesControllerTest extends TestCase
         // 'lat' => '38.720661384644046',
         // 'lng' => '-9.16044783453807',
         // office 2
-  
+
         $office = Office::factory()->create([
             'lat' => '39.740517284644046',
             'lng' => '-8.7703753783453807',
@@ -118,7 +120,7 @@ class OfficesControllerTest extends TestCase
             'lng' => '-9.281266783453807',
             'title' => 'Torres Verdas',
         ]);
-  
+
 
         $response = $this->get('/api/offices?lat=38.720661384644046&lng=-9.16044783453807');
         $response->assertOk();
@@ -129,7 +131,7 @@ class OfficesControllerTest extends TestCase
         $response->assertOk();
        $this->assertEquals('Leiria', $response->json('data')[0]['title']);
         $this->assertEquals('Torres Verdas', $response->json('data')[1]['title']);
-        
+
     }
 
     public function test_showsTheOffice()
@@ -145,7 +147,7 @@ class OfficesControllerTest extends TestCase
         Reservation::factory()->for($office)->create(['status' => Reservation::STATUS_CANCELLED]);
 
         $response = $this->get('/api/offices/'.$office->id);
-        
+
         $response->assertOk();
         $this->assertEquals(1, $response->json('data')['reservations_count']);
         $this->assertIsArray($response->json('data')['tags']);
@@ -157,35 +159,88 @@ class OfficesControllerTest extends TestCase
 
     public function test_createAnOffice()
     {
-        $user = User::factory()->createQuietly();
-        $tag = Tag::factory()->create();
-        $tag2 = Tag::factory()->create();
+        $user = User::factory()->create();
+        $tags = Tag::factory(2)->create();
 
         $this->actingAs($user);
-        $response = $this->postJson('/api/offices', [
-            'title' => 'Office in Manila',
-            'description' => 'Descriptions',
-            'lat' => '39.740517284644046',
-            'lng' => '-8.7703753783453807',
-            'address_line1' => 'address',
-            'price_per_day' => 10_000,
-            'monthly_discount' => 5,
-            'tags' => [
-                $tag->id, $tag2->id
-            ]
-        ]); 
- 
+
+
+        $response = $this->postJson('/api/offices', Office::factory()->raw([
+            'tags' => $tags->pluck('id')->toArray()
+        ]));
+
         // dd($response->json());
 
         $response->assertCreated()
-            ->assertJsonPath('data.title','Office in Manila')           
-            ->assertJsonPath('data.user.id', $user->id)           
-            ->assertJsonPath('data.approval_status', Office::APPROVAL_PENDING)           
-            ->assertJsonCount(2,'data.tags');
-            
+        ->assertJsonPath('data.approval_status', Office::APPROVAL_PENDING)
+        ->assertJsonPath('data.reservations_count', null)
+        ->assertJsonPath('data.user.id', $user->id)
+        ->assertJsonCount(2, 'data.tags');
+
         // test if the model persist in the database
         $this->assertDatabaseHas('offices', [
-            'title' => 'office in Manila'
+            'id' => $response->json('data.id')
         ]);
     }
+
+    public function test_DoesntAllowCreatingIfScopeIsNotProvided()
+    {
+        $user = User::factory()->create();
+
+        Sanctum::actingAs($user, []);
+
+        $response = $this->postJson('/api/offices');
+
+        $response->assertForbidden();
+    }
+
+    public function test_updateAnOffice()
+    {
+        $user = User::factory()->create();
+        $tags = Tag::factory(3)->create();
+        $anotherTag = Tag::factory()->create();
+        $office = Office::factory()->for($user)->create();
+
+        $office->tags()->attach($tags);
+        $this->actingAs($user);
+        // dd('/api/offices/'.$office->id);
+
+        $response = $this->putJson('/api/offices/'.$office->id, [
+            'title' => 'Amazing office',
+            'tags' => [$tags[0]->id, $anotherTag->id]
+        ]);
+
+
+        $response->assertOk()
+        ->assertJsonCount(2, 'data.tags')
+        ->assertJsonPath('data.tags.0.id', $tags[0]->id)
+        ->assertJsonPath('data.tags.1.id', $anotherTag->id)
+        ->assertJsonPath('data.title', 'Amazing office');
+        // test if the model persist in the database
+        // $this->assertDatabaseHas('offices', [
+        //     'title' => 'office in Manila'
+        // ]);
+    }
+    public function test_updateAnOfficeDoesntBelongToUser()
+    {
+        $user = User::factory()->create();
+        $anotherUser = User::factory()->create();
+        $office = Office::factory()->for($anotherUser)->create();
+
+        // $office->tags()->attach($tags);
+        $this->actingAs($user);
+        // dd('/api/offices/'.$office->id);
+
+        $response = $this->putJson('/api/offices/'.$office->id, [
+            'title' => 'Amazing office',
+        ]);
+
+        $response->assertStatus(Response::HTTP_FORBIDDEN);
+        // test if the model persist in the database
+        // $this->assertDatabaseHas('offices', [
+        //     'title' => 'office in Manila'
+        // ]);
+    }
+
+
 }
