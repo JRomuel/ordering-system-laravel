@@ -243,4 +243,31 @@ class OfficesControllerTest extends TestCase
     }
 
 
+    public function test_marksOfficeAsPendingIfChangedOrDirty()
+    {
+        User::factory()->create(['name' => 'romuel']);
+
+        $user = User::factory()->create();
+        $office = Office::factory()->for($user)->create();
+
+        // $office->tags()->attach($tags);
+        $this->actingAs($user);
+        // dd('/api/offices/'.$office->id);
+
+        $response = $this->putJson('/api/offices/'.$office->id, [
+            'lat' => '38.720661384612344',
+        ]);
+
+        $response->assertOk();
+        $this->assertDatabaseHas('offices',[
+            'id' => $office->id,
+            'approval_status' => Office::APPROVAL_PENDING,
+        ]);
+
+        // test if the model persist in the database
+        // $this->assertDatabaseHas('offices', [
+        //     'title' => 'office in Manila'
+        // ]);
+    }
+
 }

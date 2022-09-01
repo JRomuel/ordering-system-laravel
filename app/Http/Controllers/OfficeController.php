@@ -5,16 +5,16 @@ namespace App\Http\Controllers;
 use App\Http\Resources\OfficeResource;
 use App\Models\Office;
 use App\Models\Reservation;
+use App\Models\User;
 use App\Models\Validators\OfficeValidator;
+use App\Notifications\OfficePendingApproval;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Http\Request;
 use Illuminate\Http\Response;
-use Illuminate\Validation\Rule;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
-use Nette\Utils\Json;
 
 class OfficeController extends Controller
 {
@@ -64,8 +64,6 @@ class OfficeController extends Controller
         $attributes['user_id'] = auth()->id();
 
         // CHeck if both query succeed with no errors
-
-
         $office = DB::transaction(function () use ($office, $attributes) {
             $office->fill(
                 Arr::except($attributes, ['tags'])
@@ -93,15 +91,29 @@ class OfficeController extends Controller
 
         $attributes = (new OfficeValidator())->validate($office, request()->all());
 
+        $office->fill(Arr::except($attributes, ['tags']));
+
+        // check if the office has changed some attributes
+        if($requiresReview = $office->isDirty(['lat', 'lng', 'price_per_day']))
+        {
+            $office->fill(['approval_status' => Office::APPROVAL_PENDING]);
+        }
+
+
         DB::transaction(function () use ($office, $attributes) {
-            $office->update(
-                Arr::except($attributes, ['tags'])
-            );
+            $office->save();
             if(isset($attributes['tags'])) {
                 $office->tags()->sync($attributes['tags']);
             }
 
         });
+
+        if($requiresReview)
+        {
+            // dd(User::firstWhere('name', 'romuel'));
+            Notification::send(User::firstWhere('name', 'romuel'), new OfficePendingApproval($office));
+            // dd(User::firstWhere('name', 'romuel'));
+        }
 
 
         return OfficeResource::make(
