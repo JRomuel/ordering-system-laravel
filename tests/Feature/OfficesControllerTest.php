@@ -7,11 +7,13 @@ use App\Models\Office;
 use App\Models\Reservation;
 use App\Models\Tag;
 use App\Models\User;
+use App\Notifications\OfficePendingApproval;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\WithFaker;
 use Tests\TestCase;
 use Laravel\Sanctum\Sanctum;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Notification;
 
 class OfficesControllerTest extends TestCase
 {
@@ -25,12 +27,13 @@ class OfficesControllerTest extends TestCase
     {
         Office::factory(3)->create();
         $response = $this->get('/api/offices');
-        // dd($response->json());
-        $response->assertStatus(200);
+        dd($response->json());
+        // $response->assertStatus(200);
         $this->assertNotNull($response->json('data')[0]['id']);
         $this->assertNotNull($response->json('meta'));
         $this->assertNotNull($response->json('links'));
         $response->assertJsonCount(3, 'data');
+
     }
     public function test_listOnlyOfficesNotHiddenAndApproved()
     {
@@ -245,7 +248,9 @@ class OfficesControllerTest extends TestCase
 
     public function test_marksOfficeAsPendingIfChangedOrDirty()
     {
-        User::factory()->create(['name' => 'romuel']);
+        $admin = User::factory()->create(['name' => 'romuel']);
+
+        Notification::fake();
 
         $user = User::factory()->create();
         $office = Office::factory()->for($user)->create();
@@ -263,6 +268,8 @@ class OfficesControllerTest extends TestCase
             'id' => $office->id,
             'approval_status' => Office::APPROVAL_PENDING,
         ]);
+
+        Notification::assertSentTo($admin, OfficePendingApproval::class);
 
         // test if the model persist in the database
         // $this->assertDatabaseHas('offices', [

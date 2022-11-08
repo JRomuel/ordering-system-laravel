@@ -16,6 +16,7 @@ class OfficeResource extends JsonResource
      */
     public function toArray($request)
     {
+        dd('test');
         return [
             'user' => UserResource::make($this->whenLoaded('user')),
             'images' => ImageResource::collection($this->whenLoaded('images')),
